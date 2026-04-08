@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: saas-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: saas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: saas-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@test.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  redis:
+    image: redis:7
+    container_name: saas-redis
+    restart: always
+    ports:
+      - "6379:6379"
+  
+  redisinsight:
+    image: redis/redisinsight
+    ports:
+      - "5540:5540"
+
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: saas-backend
+  #   restart: always
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   environment:
+  #     DATABASE_URL: postgresql://postgres:postgres@postgres:5432/saas_db
+  #     REDIS_URL: redis://redis:6379
+  #     JWT_SECRET: supersecret
+  #   volumes:
+  #     - ./backend:/app
+  #   command: npm run start:dev
+
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: saas-frontend
+  #   restart: always
+  #   ports:
+  #     - "3001:3000"
+  #   depends_on:
+  #     - backend
+  #   volumes:
+  #     - ./frontend:/app
+  #   command: npm run dev
+
+volumes:
+  postgres_data:

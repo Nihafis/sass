@@ -1,0 +1,76 @@
+generator client {
+  provider     = "prisma-client-js"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  password    String
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  sessions    Session[]
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+  services    Service[]
+}
+
+model Membership {
+  id             String @id @default(uuid())
+  userId         String
+  organizationId String
+  role           Role
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Service {
+  id             String @id @default(uuid())
+  organizationId String
+  name           String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  metrics      Metric[]
+}
+
+model Metric {
+  id        String   @id @default(uuid())
+  serviceId String
+  latency   Int
+  status    String
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@index([serviceId, createdAt])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
