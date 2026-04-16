@@ -24,7 +24,7 @@ function StatusBadge({ status }: { status: string }) {
         border: `1px solid ${isOk ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
       }}>
       <span className="w-1.5 h-1.5 rounded-full"
-        style={{ background: isOk ? "var(--green)" : "var(--red)" }}/>
+        style={{ background: isOk ? "var(--green)" : "var(--red)" }} />
       {status}
     </span>
   );
@@ -37,7 +37,7 @@ function LatencyBar({ value, max }: { value: number; max: number }) {
     <div className="flex items-center gap-3">
       <div className="flex-1 h-1.5 rounded-full" style={{ background: "var(--border)" }}>
         <div className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: color }}/>
+          style={{ width: `${pct}%`, background: color }} />
       </div>
       <span className="text-xs font-mono w-14 text-right" style={{ color }}>
         {value}ms
@@ -65,6 +65,7 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [connected, setConnected] = useState(false);
   const [orgJoined, setOrgJoined] = useState(false);
+  const [alerts, setAlerts] = useState<{ serviceId: string; latency: number; timestamp: string }[]>([]);
 
   const avgLatency = metrics.length > 0
     ? Math.round(metrics.reduce((s, m) => s + m.latency, 0) / metrics.length)
@@ -91,6 +92,11 @@ export default function DashboardPage() {
         setOrgJoined(true);
       });
     });
+
+    socket.on("alert", (alert) => {
+      setAlerts(prev => [alert, ...prev].slice(0, 10));
+    });
+
 
     socket.on("disconnect", () => {
       setConnected(false);
@@ -126,12 +132,17 @@ export default function DashboardPage() {
             style={{ background: "var(--accent)", boxShadow: "0 0 16px rgba(59,130,246,0.4)" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M3 12h4l3-8 4 16 3-8h4" stroke="white" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round"/>
+                strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
           <span className="font-semibold">
             SaaS<span style={{ color: "var(--accent)" }}>Monitor</span>
           </span>
+          <button onClick={() => router.push("/organizations")}
+            style={{ color: "var(--muted)", border: "1px solid var(--border)" }}
+            className="text-xs px-3 py-1.5 rounded-lg cursor-pointer">
+            Organizations
+          </button>
         </div>
 
         <div className="flex items-center gap-4">
@@ -146,7 +157,7 @@ export default function DashboardPage() {
               style={{
                 background: connected ? "var(--green)" : "var(--red)",
                 animation: connected ? "pulse-glow 2s infinite" : "none",
-              }}/>
+              }} />
             {connected ? (orgJoined ? "Live" : "Joining...") : "Disconnected"}
           </div>
 
@@ -158,6 +169,7 @@ export default function DashboardPage() {
             Sign out
           </button>
         </div>
+
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
@@ -222,7 +234,7 @@ export default function DashboardPage() {
               style={{ color: "var(--muted)" }}>
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" className="mb-4 opacity-30">
                 <path d="M3 12h4l3-8 4 16 3-8h4" stroke="currentColor" strokeWidth="1.5"
-                  strokeLinecap="round" strokeLinejoin="round"/>
+                  strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm">Waiting for metrics...</p>
               <p className="text-xs mt-1 opacity-60">

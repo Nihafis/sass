@@ -165,6 +165,14 @@ export class MetricsGateway
         `High latency detected: serviceId=${data.serviceId} latency=${data.latency}ms`,
       );
 
+      this.server.to(`org:${orgId}`).emit("alert", {
+        type: "high-latency",
+        serviceId: data.serviceId,
+        latency: data.latency,
+        threshold: LATENCY_THRESHOLD,
+        timestamp: new Date().toISOString(),
+      });
+
       await this.alerts.triggerHighLatencyAlert({
         serviceId: data.serviceId,
         latency: data.latency,

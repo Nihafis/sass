@@ -1,4 +1,12 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  UseGuards,
+  Delete,
+} from "@nestjs/common";
 import { OrganizationService } from "./organization.service";
 import { JwtAuthGuard } from "src/common/guards/jwt-auth.guard";
 import { CurrentUser } from "src/common/decorators/current-user.decorator";
@@ -34,5 +42,17 @@ export class OrganizationController {
   @Get(":id/members")
   getMembers(@OrgId() orgId: string, @CurrentUser() user: any) {
     return this.orgService.getMembers(orgId, user.userId);
+  }
+
+  @Get()
+  getMyOrganizations(@CurrentUser() user: any) {
+    return this.orgService.getMyOrganizations(user.userId);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.OWNER)
+  @Delete(":id")
+  deleteOrganization(@OrgId() orgId: string, @CurrentUser() user: any) {
+    return this.orgService.deleteOrganization(orgId, user.userId);
   }
 }

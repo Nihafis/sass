@@ -1,10 +1,47 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from 'src/infra/prisma/prisma.service';
-import { Role } from 'src/generated/prisma';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
+import { PrismaService } from "src/infra/prisma/prisma.service";
+import { Role } from "src/generated/prisma";
 
 @Injectable()
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async getMyOrganizations(userId: string) {
+    const membership = await this.prisma.membership.findMany({
+      where: { userId },
+      include: {
+        organization: {
+          include: { _count: { select: { memberships: true } } },
+        },
+      },
+    });
+
+    return membership.map((m) => ({
+      ...m.organization,
+      role: m.role,
+    }));
+  }
+
+  async deleteOrganization(orgId: string, userId: string) {
+    const membership = await this.prisma.membership.findUnique({
+      where: {
+        userId_organizationId: {
+          userId,
+          organizationId: orgId,
+        },
+      },
+    });
+
+    if (!membership || membership.role !== Role.OWNER) {
+      throw new ForbiddenException("Only OWNER can delete the organization");
+    }
+
+    return await this.prisma.organization.delete({ where: { id: orgId } });
+  }
 
   // สร้าง org + เพิ่ม user เป็น OWNER อัตโนมัติ
   async createOrganization(name: string, userId: string) {
@@ -25,7 +62,12 @@ export class OrganizationService {
   }
 
   // invite user เข้า org (เฉพาะ OWNER/ADMIN)
-  async inviteMember(orgId: string, inviterId: string, email: string, role: Role) {
+  async inviteMember(
+    orgId: string,
+    inviterId: string,
+    email: string,
+    role: Role,
+  ) {
     // 1. เช็คว่า inviter มีสิทธิ์ไหม
     const inviter = await this.prisma.membership.findUnique({
       where: {
@@ -37,12 +79,12 @@ export class OrganizationService {
     });
 
     if (!inviter || inviter.role === Role.MEMBER) {
-      throw new ForbiddenException('Only OWNER or ADMIN can invite members');
+      throw new ForbiddenException("Only OWNER or ADMIN can invite members");
     }
 
     // 2. หา user จาก email
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     // 3. เพิ่ม membership
     return this.prisma.membership.create({
@@ -66,7 +108,8 @@ export class OrganizationService {
       },
     });
 
-    if (!membership) throw new ForbiddenException('Not a member of this organization');
+    if (!membership)
+      throw new ForbiddenException("Not a member of this organization");
 
     return this.prisma.membership.findMany({
       where: { organizationId: orgId },
