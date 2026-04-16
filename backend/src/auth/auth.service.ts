@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "src/infra/prisma/prisma.service";
 import { JwtService } from "@nestjs/jwt/dist/jwt.service";
@@ -13,14 +18,25 @@ export class AuthService {
     @Inject(Keyv) private readonly redis: Keyv,
   ) {}
 
+  private readonly logger = new Logger(AuthService.name);
+
   async register(email: string, password: string) {
+    this.logger.log(`Register attempt: ${maskEmail(email)}`);
+
     const hash = await bcrypt.hash(password, 10);
-    return this.prisma.user.create({
+    console.log(`sdasdasd`, typeof hash);
+    const user = await this.prisma.user.create({
       data: { email, password: hash },
     });
+    this.logger.log(`User registered: id=${user.id} email=${maskEmail(email)}`);
+
+    return user;
   }
 
   async login(user: any) {
+    // ✅ log business event
+    this.logger.log(`User logged in: id=${user.id}`);
+
     const accessToken = this.jwt.sign(
       { sub: user.id, email: user.email },
       { expiresIn: "15m" },
@@ -50,6 +66,8 @@ export class AuthService {
   async refresh(refreshToken: string) {
     try {
       const payload = this.jwt.verify(refreshToken);
+      this.logger.debug(`Token refresh for userId=${payload.sub}`);
+
       const hashed = hashToken(refreshToken);
 
       // 1. check Redis ก่อน (เร็วกว่า DB)
@@ -80,12 +98,15 @@ export class AuthService {
 
       return { accessToken: newAccessToken };
     } catch (err) {
+      this.logger.warn(`Token refresh failed: ${(err as Error).message}`);
+
       throw new UnauthorizedException("Invalid refresh token");
     }
   }
 
   async logout(refreshToken: string) {
     const hashed = hashToken(refreshToken);
+    this.logger.log(`Logout: tokenHash=${hashed.substring(0, 8)}...`);
 
     // ลบจาก Redis + DB พร้อมกัน
     await Promise.all([
@@ -103,11 +124,23 @@ export class AuthService {
       where: { email },
     });
 
-    if (!user) throw new UnauthorizedException("Invalid credentials");
-
+    if (!user) {
+      this.logger.warn(`Login failed (user not found): ${maskEmail(email)}`);
+      throw new UnauthorizedException("Invalid credentials");
+    }
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw new UnauthorizedException("Invalid credentials");
+    if (!isMatch) {
+      this.logger.warn(`Login failed (invalid password): ${maskEmail(email)}`);
+      throw new UnauthorizedException("Invalid credentials");
+    }
+    this.logger.log(`User validated: id=${user.id}`);
 
     return user;
   }
+}
+// helper: ซ่อน email บางส่วนเพื่อ privacy
+// user@example.com → u***@example.com
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local[0]}***@${domain}`;
 }

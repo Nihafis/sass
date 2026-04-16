@@ -11,6 +11,11 @@ import { Server, Socket } from "socket.io";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "src/infra/prisma/prisma.service";
 import { RedisService } from "src/infra/redis/redis.service";
+import { AlertsService } from "src/modules/alerts/alerts.service";
+import { Logger } from "@nestjs/common/services/logger.service";
+
+// latency เกิน LATENCY_THRESHOLD ms → trigger alert
+const LATENCY_THRESHOLD = 1000;
 
 // namespace: '/metrics'
 // client เชื่อมที่  ws://localhost:3000/metrics
@@ -30,8 +35,9 @@ export class MetricsGateway
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly alerts: AlertsService,
   ) {}
-
+  private readonly logger = new Logger(MetricsGateway.name);
   // ─────────────────────────────────────────────────────────────
   // Subscribe Redis ตอน Gateway เริ่มทำงาน
   // ทุก server instance จะ subscribe channel เดียวกัน
@@ -39,8 +45,12 @@ export class MetricsGateway
   afterInit() {
     // subscribe channel "metric-update"
     this.redis.subscriber.subscribe("metric-update", (err) => {
-      if (err) console.error("[Redis] Subscribe error:", err);
-      else console.log("[Redis] Subscribed to metric-update channel");
+      if (err) {
+        // ✅ error level — subscribe ล้มเหลว คือ critical
+        this.logger.error("[Redis] Subscribe failed", err);
+      } else {
+        this.logger.log("[Redis] Subscribed to metric-update");
+      }
     });
 
     // เมื่อได้รับ message จาก Redis → broadcast ไป WebSocket clients
@@ -69,7 +79,6 @@ export class MetricsGateway
         client.handshake.headers?.authorization?.split(" ")[1];
 
       if (!token) throw new Error("No token provided");
-      console.log(token);
       // verify token — ถ้า expired หรือ invalid จะ throw error
       const payload = this.jwt.verify<{ sub: string; email: string }>(token);
 
@@ -77,17 +86,21 @@ export class MetricsGateway
       client.data.userId = payload.sub;
       client.data.email = payload.email;
 
-      console.log(`[WS] Connected: ${client.id} (${payload.email})`);
-    } catch {
+      this.logger.log(
+        `[WS] Connected: clientId=${client.id} userId=${payload.sub}`,
+      );
+    } catch (err) {
       // reject connection ทันที — client จะได้ error กลับไป
-      console.warn(`[WS] Rejected: ${client.id} — invalid token`);
+      this.logger.warn(
+        `[WS] Rejected: clientId=${client.id} reason=${(err as Error).message}`,
+      );
       client.disconnect();
     }
   }
 
   // ทุกครั้งที่ client disconnect
   handleDisconnect(client: Socket) {
-    console.log(`[WS] Disconnected: ${client.id}`);
+    this.logger.log(`[WS] Disconnected: clientId=${client.id}`);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -122,7 +135,9 @@ export class MetricsGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { serviceId: string; latency: number; status: string },
   ) {
-    console.log("raw data:", data, typeof data);
+    this.logger.debug(
+      `submit-metric: serviceId=${data.serviceId} latency=${data.latency}ms`,
+    );
     // save metric ลง database
     const metric = await this.prisma.metric.create({
       data: {
@@ -140,6 +155,23 @@ export class MetricsGateway
       "metric-update",
       JSON.stringify({ orgId, metric }),
     );
+
+    // ─────────────────────────────────────────────────────────────
+    // Alert: ถ้า latency เกิน threshold → เพิ่ม job เข้า queue
+    // worker (AlertsProcessor) จะรับ job ไปประมวลผลแบบ async
+    // ─────────────────────────────────────────────────────────────
+    if (data.latency > LATENCY_THRESHOLD) {
+      this.logger.warn(
+        `High latency detected: serviceId=${data.serviceId} latency=${data.latency}ms`,
+      );
+
+      await this.alerts.triggerHighLatencyAlert({
+        serviceId: data.serviceId,
+        latency: data.latency,
+        threshold: LATENCY_THRESHOLD,
+        orgId: orgId as string,
+      });
+    }
 
     // ส่ง ack กลับไปหา client ที่ submit
     return { success: true, metric };
